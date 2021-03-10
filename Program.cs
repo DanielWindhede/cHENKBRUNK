@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
@@ -17,13 +18,64 @@ namespace cHENKBRUNK
     public class Program
     {
         public readonly EventId BotEventId = new EventId(42, "cHENKBRUNK");
+        public const string ContentFileFolderAndName = "\\content\\content.json";
+        public static string GetFullContentPath { get { return System.IO.Path.GetDirectoryName(Assembly.GetEntryAssembly().Location) + ContentFileFolderAndName; } }
 
         public DiscordClient Client { get; set; }
 
-        public string Prefix = ";;";
+        public string Prefix = "..";
 
         private Dictionary<string, Func<DiscordClient, MessageCreateEventArgs, Task>> command;
 
+        public static ContentJson content { get; set; }
+
+        public static async Task LoadContent()
+        {
+            Console.WriteLine("Loading content file...");
+            var json = "";
+
+            if (File.Exists(GetFullContentPath))
+            {
+                FileStream fs = File.OpenRead("content\\content.json");
+                StreamReader sr = new StreamReader(fs, new UTF8Encoding(false));
+                
+                json = await sr.ReadToEndAsync();
+
+                fs.Close();
+                sr.Close();
+
+                if (json.Length > 0)
+                {
+                    ContentJson configJson = JsonConvert.DeserializeObject<ContentJson>(json);
+
+                    content = configJson;
+
+                    //Console.WriteLine("Loading complete! Ids found: " + content.IdArray.Length);
+                    Console.WriteLine("Loading complete! Ids found: " + content.IdArray.Count);
+                }
+                else
+                {
+                    Console.WriteLine("Loading complete! File was null :(");
+                } 
+            }
+            else
+            {
+                Console.WriteLine("~" + ContentFileFolderAndName + " does not exist! Creating file...");
+
+                JsonSerializer serializer = new JsonSerializer();
+                serializer.NullValueHandling = NullValueHandling.Ignore;
+
+                string path = System.IO.Path.GetDirectoryName(Assembly.GetEntryAssembly().Location) + ContentFileFolderAndName;
+                StreamWriter sw = new StreamWriter(path);
+                JsonWriter writer = new JsonTextWriter(sw);
+                serializer.Serialize(writer, new ContentJson());
+
+                sw.Close();
+                writer.Close();
+
+                Console.WriteLine("File created at \"" + path + "\"");
+            }
+        }
 
         //Func<DiscordClient, MessageCreateEventArgs, Task> helpCommand = delegate (DiscordClient sender, MessageCreateEventArgs e)
         //{
@@ -41,7 +93,7 @@ namespace cHENKBRUNK
         {
             // first, let's load our configuration file
             var json = "";
-            using (var fs = File.OpenRead("config.json"))
+            using (var fs = File.OpenRead("content\\config.json"))
             using (var sr = new StreamReader(fs, new UTF8Encoding(false)))
                 json = await sr.ReadToEndAsync();
 
@@ -58,7 +110,9 @@ namespace cHENKBRUNK
             };
 
             this.Prefix = configJson.CommandPrefix;
-            print(configJson.CommandPrefix);
+            print("Current Command Prefix: " + configJson.CommandPrefix);
+
+            await LoadContent();
 
             IEnumerable<MessageCommand> exporters = typeof(MessageCommand)
                                             .Assembly.GetTypes()
@@ -100,7 +154,9 @@ namespace cHENKBRUNK
                 string c = content;
 
                 if (index >= 0)
-                    c = c.Substring(index);
+                    c = c.Remove(index);
+
+                Console.WriteLine("Message: " + e.Message.Content + ", Trimmed msg: " + c);
 
                 if (command.ContainsKey(c))
                 {
@@ -111,7 +167,7 @@ namespace cHENKBRUNK
                     string[] links = GetLinks(e.Message.Content);
                     if (links.Length > 0)
                     {
-                        string message = string.Empty;
+                        string message = "bEEP bOOP i FOUND THESE LINK(S): ";
                         for (int i = 0; i < links.Length; i++)
                         {
                             if (i == 0)
@@ -172,7 +228,8 @@ namespace cHENKBRUNK
         }
         public string[] GetLinks(string str)
         {
-            Regex regx = new Regex("http://|https://([\\w+?\\.\\w+])+([a-zA-Z0-9\\~\\!\\@\\#\\$\\%\\^\\&amp;\\*\\(\\)_\\-\\=\\+\\\\\\/\\?\\.\\:\\;\\'\\,]*)?", RegexOptions.IgnoreCase);
+            //Regex regx = new Regex("http://|https://([\\w+?\\.\\w+])+([a-zA-Z0-9\\~\\!\\@\\#\\$\\%\\^\\&amp;\\*\\(\\)_\\-\\=\\+\\\\\\/\\?\\.\\:\\;\\'\\,]*)?", RegexOptions.IgnoreCase);
+            Regex regx = new Regex("https://(((www[.])+(youtube[.]com/)|(youtu[.]be/))|(open[.]spotify[.]com/track/)|(soundcloud[.]com/))+([a-zA-Z0-9-\\~\\!\\@\\#\\$\\%\\^\\&amp;\\*\\(\\)_\\-\\=\\+\\\\\\/\\?\\.\\:\\;\\'\\,]*)?", RegexOptions.IgnoreCase);
             MatchCollection matches = regx.Matches(str);
 
             List<string> links = new List<string>();
@@ -229,5 +286,12 @@ namespace cHENKBRUNK
 
         [JsonProperty("prefix")]
         public string CommandPrefix { get; private set; }
+    }
+
+    public struct ContentJson
+    {
+        [JsonProperty("idArray")]
+        //public ulong[] IdArray { get; set; }
+        public HashSet<ulong> IdArray { get; set; }
     }
 }
